@@ -8,7 +8,7 @@ your token and user-id to the class-variables at the top. Also be sure to edit t
 Requirements
 ------------
 
-BeautifulSoup - For parsing the asp.net responses (BS4)
+BeautifulSoup - For parsing the asp.net responses (BS4)                  
 Pushwrapper - If you want to use Pushover (Included)
 
 
