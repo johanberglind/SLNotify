@@ -3,40 +3,43 @@
 from bs4 import BeautifulSoup
 import urllib
 import urllib2
-import sys
 import re
-from pushwrapper import Pushover
 import hashlib
-
-
-class SLError(RuntimeError):
-    """
-    SLError Handling
-    """
+from pushbullet import PushBullet
 
 
 class Notify(object):
     def __init__(self, bus_lines):
-        self.pushover_token = ''
-        self.pushover_user = ''
         self.bus_lines = bus_lines
-        self.bus_lines_list = self.bus_lines.replace(',', '').split()
 
-    def html_cleaner(self, stringy):
-        stringy = str(stringy)
-        clean_stringy_re = re.search('<span>(.*)</span>', stringy)
-        clean_stringy = clean_stringy_re.group(1)
-        return clean_stringy
+    def get_relevant_string(self, string):
+        """ get_relevant_string() parses the string and returns the
+        string between span-tags, it also removes a br tag which is
+        left in from the bs4 parsing.
 
-    # Asp_buddy finds the viewstate and eventvalidate string from the webpage, these are necessary in order to make a POST request and they are not static
+        Returns:
+            String relevant to user.
+        """
+        return re.search("<span>(.*)</span>", unicode(string)).group(1).\
+            replace('<br/>', '')
 
-    def asp_buddy(self):
+    def query_asp_pre(self):
+        """ Finds the eventvalidate and viewstate strings from the ASP page.
+        Since these are not static, it's required to fetch these
+        before request.
+
+        Returns:
+            viewstate - parameter required for request
+            eventvalidate - parameter required for request
+
+        """
         __url__ = 'http://storningsinformation.sl.se/sv/?State=Search'
         request = urllib2.Request(__url__)
         request_open = urllib2.urlopen(request)
         request_read = request_open.read()
         soup = BeautifulSoup(request_read)
-        event_validate_raw = soup.findAll('input', attrs={'id': '__EVENTVALIDATION'})
+        event_validate_raw = soup.findAll('input',
+                                          attrs={'id': '__EVENTVALIDATION'})
         viewstate_raw = soup.findAll('input', attrs={'id': '__VIEWSTATE'})
         viewstate_re = re.search('value="(.*)"', str(viewstate_raw))
         event_validate_re = re.search('value="(.*)"', str(event_validate_raw))
@@ -44,45 +47,56 @@ class Notify(object):
         event_validate = event_validate_re.group(1)
         return viewstate, event_validate
 
-
     def hash_string(self, string):
+        """ hash_string hashes the string using md5 and returns
+        the digest of this. This is because it's easier to store and
+        compare the hashes instead of complete strings.
+
+        Returns:
+            Hashed string.
+        """
         hashedString = hashlib.md5(string).hexdigest()
         return hashedString
 
     def poster(self, issues):
-        try:
-            for x in range(0, len(issues)):
-                if self.bus_lines[x] in issues['issue_{0}'.format(x)]:
-                    if '{}'.format(self.hash_string(issues['issue_{0}'.format(x)])) in open('posts.db').read():
-                        print("**** Message: {} previously posted: **** || {} ||".format(x, issues['issue_{0}'.format(x)]))
-                    else:
-                        print("Sent! Message: {}".format(issues['issue_{0}'.format(x)]))
-                        self.pushover_post(issues, x)
-                        postdb = open('posts.db', 'a+')
-                        postdb.write('{}'.format(self.hash_string(issues['issue_{0}'.format(x)])) + '\n')
-                        postdb.close()
-        except IOError:
-            open('posts.db', 'w').close()
-            self.poster(issues)
+        """ poster() goes through all the issues and
+        checks if they are already in the db. If not,
+        use the pushbullet_post()-function to sent these
+        to the user.
+        """
 
+        for issue in issues:
+            if not (self.hash_string(issue) in open('posts.db', 'a+').read()):
+                self.pushbullet_post(issue)
+                print("Disturbance found and sent.")
+                open('posts.db', 'a+').write(self.hash_string(issue) + '\n')
 
-    def pushover_post(self, issues, x):
-        p = Pushover()
-        p.Send(self.pushover_token, self.pushover_user, issues['issue_{0}'.format(x)])
+    def pushbullet_post(self, issue):
+        """ Posts to Pushbullet API.
+        For future reference, the push_note() function returns two
+        values. One bool that specificies whether the push was a success
+        or not, and a dict with additional info.
+        """
 
-
+        pb = PushBullet('YOUR-API-KEY')
+        worked, push = pb.push_note(u"Förseningar", issue)
+        if not worked:
+            print(push)
 
     def issue_check(self):
-        # HTML POST REQUEST TO ASP.NET SERVER
+        """ issue_check() polls the ASP.net server and checks for
+        any potential issues relating to the bus lines specified.
+        If it find any disturbances it will return these in a list.
 
-        viewstate, event_validate = self.asp_buddy()
+        Returns: issues - str lst containing issues
+        """
+
+        viewstate, event_validate = self.query_asp_pre()
 
         headers = {
-            'HTTP_USER_AGENT': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.97 Safari/537.22',
+            'HTTP_USER_AGENT': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22\ (KHTML, like Gecko)\ Chrome/25.0.1364.97 Safari/537.22',
             'HTTP_ACCEPT': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Content-Type': 'application/x-www-form-urlencoded'
-
-
         }
         url = 'http://storningsinformation.sl.se/Avvikelser.aspx'
         formData = (
@@ -99,7 +113,8 @@ class Notify(object):
             ('ctl00$FullRegion$SearchDeviation1$cblTransportMode$2', 'on'),
             ('ctl00$FullRegion$SearchDeviation1$cblTransportMode$3', 'on'),
             ('ctl00$FullRegion$SearchDeviation1$What', 'rbWhat2'),
-            ('ctl00$FullRegion$SearchDeviation1$tbLineNumber', '{}'.format(self.bus_lines)),
+            ('ctl00$FullRegion$SearchDeviation1$tbLineNumber',
+                '{}'.format(self.bus_lines)),
             ('ctl00$FullRegion$SearchDeviation1$tbStopArea', ''),
             ('ctl00$FullRegion$SearchDeviation1$ddlFromDate ', 'Now'),
             ('ctl00$FullRegion$SearchDeviation1$btnSubmit', 'Sök'),
@@ -111,18 +126,10 @@ class Notify(object):
         req_Read = req_Open.read()
         soup = BeautifulSoup(req_Read)
         issues = soup.findAll('a', attrs={'class': 'detailLink'})
-        if not issues:
-            print("No issues detected..")
-            sys.exit()
-
-        else:
-            issues_dict = {}
-            for x in range(0, len(issues)):
-                issues_dict["issue_{0}".format(x)] = self.html_cleaner(issues[x])
-            return issues_dict
-
+        return [self.get_relevant_string(issue).encode('utf-8') for
+                issue in issues]
 
 if __name__ == '__main__':
-    n = Notify('422, 474')
+    n = Notify('471')
     issues = n.issue_check()
     n.poster(issues)
