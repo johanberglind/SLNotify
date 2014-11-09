@@ -8,8 +8,9 @@ your token and user-id to the class-variables at the top. Also be sure to edit t
 Requirements
 ------------
 
-BeautifulSoup - For parsing the asp.net responses (BS4)                  
-Pushwrapper - If you want to use Pushover (Included)
+`pip install -r requirements.txt`
+
+BeautifulSoup4 - For parsing the asp.net responses (BS4)                  
 
 
 License
@@ -27,12 +28,7 @@ You can run SLNotify as a stand-alone script however you can also integrate it t
     n = Notify('410, 474')
     issues = n.issue_check()
     
-This will return a maximum of three issues per query into the variable issues. Issues is a dictionary with a key and a value
-which is the string returned from the ASP.NET Server. Optional:
-
-    n.poster(issues)
-
-    
+This will return a maximum of three issues per query into the variable issues. Issues is a str[] containing all the issues found by the query from the ASP.NET Server.    
     
 Best regards!
 
